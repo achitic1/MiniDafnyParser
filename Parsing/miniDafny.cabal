@@ -1,0 +1,36 @@
+cabal-version:       2.2
+name:                miniDafny
+version:             0.1.0.0
+synopsis:            Final Project for CSMC 433 
+homepage:            https://www.cs.umd.edu/class/spring2023/cmsc433/
+license-file:        LICENSE
+author:              University of Maryland
+maintainer:          leonidas@cs.umd.edu
+build-type:          Simple
+
+common common-stanza
+  ghc-options:         -Wincomplete-patterns -Wno-orphans -Wno-unused-imports -Wno-noncanonical-monad-instances
+  build-depends:       base 
+                     , containers 
+                     , HUnit 
+                     , pretty
+  default-language:    GHC2021
+
+library
+  import: common-stanza
+  exposed-modules:     
+                       Syntax
+                       Parser,
+                       DafnyParser
+
+ hs-source-dirs: src
+
+executable miniDafny
+  import: common-stanza
+  main-is:             Main.hs
+  other-modules:       Syntax,
+                       Parser,
+                       DafnyParser
+  hs-source-dirs: src
+  build-depends: miniDafny
+
