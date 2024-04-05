@@ -284,12 +284,31 @@ nameP = P.filter isValid (wsP (some (P.satisfy (not . Char.isSpace))))
 -- >>> P.parse (many uopP) "- -"
 -- Right [Neg,Neg]
 uopP :: Parser Uop
-uopP = undefined
+uopP = (constP "-" Neg) <|> (constP "!" Not)
 
--- >>> P.parse (many bopP) "+ >= .."
--- Right [Plus,Ge,Concat]
+-- >>> P.parse (many bopP) "+ >="
+-- Right [Plus,Ge]
 bopP :: Parser Bop
-bopP = undefined
+bopP = plusP <|> minusP <|> timesP <|> divideP <|>
+       moduloP <|> eqP <|> neqP <|> 
+       gtP <|> geP <|> ltP <|> leP <|>
+       conjP <|> disjP <|> impliesP <|> iffP 
+  where 
+     plusP = constP "+" Plus
+     minusP = constP "-" Minus
+     timesP = constP "*" Times
+     divideP = constP "/" Divide
+     moduloP = constP "%" Modulo
+     eqP = constP "==" Eq
+     neqP = constP "!=" Neq
+     gtP = constP ">" Gt
+     geP = constP ">=" Ge 
+     ltP = constP "<" Lt
+     leP = constP "<=" Le
+     conjP = constP "&&" Conj
+     disjP = constP "||" Disj
+     impliesP = constP "==>" Implies
+     iffP = constP "<==>" Iff
 
 -- | At this point you should be able to test the  `prop_roundtrip_exp` property.
 
