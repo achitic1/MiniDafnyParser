@@ -314,6 +314,94 @@ if you load it as a .dfy.
 TODO: You can replace the following with your definition from the previous homework.
 
 -}
+instance PP String where
+  pp = PP.text
+
+instance PP Int where
+  pp = PP.int
+
+-- | TODO: Implement pretty printing for Booleans and lists of integers
+instance PP Bool where
+  pp b = if b then pp "true" else pp "false"
+
+instance PP [Int] where
+  pp l = PP.brackets $ ppAux l where 
+    ppAux [] = PP.empty
+    ppAux (x:xs@[]) = PP.int x <> ppAux xs
+    ppAux (x:xs) = PP.int x <> PP.text "," <> ppAux xs
+
+
+-- | That should allow you to also pretty pring values if needed.
+instance PP Value where
+  pp (IntVal i)  = pp i
+  pp (BoolVal b) = pp b
+  pp (ArrayVal l)  = pp l
+
+-- | TODO: Implement pretty printing for binary operators
+instance PP Bop where
+  pp Plus   = PP.char '+'
+  pp Minus  = PP.char '-'
+  pp Times  = PP.char '*'
+  pp Divide = PP.char '/'
+  pp Modulo = PP.char '%'
+  pp Eq     = PP.text "=="
+  pp Neq    = PP.text "!="
+  pp Gt     = PP.char '>'
+  pp Ge     = PP.text ">="
+  pp Lt     = PP.char '<'
+  pp Le     = PP.text "<="
+  pp Conj   = PP.text "&&"
+  pp Disj   = PP.text "||"
+  pp Implies = PP.text "==>"
+  pp Iff    = PP.text "<==>"
+
+-- | Types and bindings can be pretty printed
+
+instance PP Type where
+  pp TInt  = PP.text "int"
+  pp TBool = PP.text "bool"
+  pp TArrayInt = PP.text "array<int>"
+
+instance PP Binding where
+  pp (x, t) = PP.text x <+> PP.text ":" <+> pp t
+
+
+{- |
+   Expressions are trickier if you want to avoid putting parentheses everywhere.
+
+   The following code uses two heuristics to ensure minimal parentheses
+   are placed:
+
+   * When printing single-operand operations, we don't wrap
+     "base" expressions in parentheses.
+   * When printing binary operations, we take the precedence level
+     of the operator into account.
+
+   We've implemented this logic for you, but there are is one thing
+   missing: the array ".Length" operation is now not handled.
+
+TODO: Make sure you implement pretty printing for ".Length" by
+editing the following code appropriately.
+
+-} 
+
+instance PP Expression where
+  pp (Var v) = pp v
+  pp (Val v) = pp v
+  pp (Op1 Len v) = (if isBase v then pp v else PP.parens (pp v)) <> pp Len  
+  pp (Op1 o v) = pp o <+> if isBase v then pp v else PP.parens (pp v)
+  pp e@Op2{} = ppPrec 0 e  where
+     ppPrec n (Op2 e1 bop e2) =
+        ppParens (level bop < n) $
+           ppPrec (level bop) e1 <+> pp bop <+> ppPrec (level bop + 1) e2
+     ppPrec _ e' = pp e'
+     ppParens b = if b then PP.parens else id
+
+isBase :: Expression -> Bool
+isBase Val{} = True
+isBase Var{} = True
+isBase Op1{} = True
+isBase _ = False
 
 level :: Bop -> Int
 level Times  = 7
@@ -323,15 +411,72 @@ level Minus  = 5
 level Conj   = 3
 level _      = 2    -- comparison operators
 
+-- | TODO: Implement pretty printing for variables
+instance PP Var where
+  pp (Name n) = PP.text n
+  pp (Proj e1 e2) = pp e1 <> (PP.brackets $ pp e2)
 
-instance PP Value where
-  pp = undefined
-  
-instance PP Expression where
-  pp = undefined
-  
+-- | TODO: Implement pretty printing for blocks
+instance PP Block where
+  pp (Block []) = PP.empty
+  pp (Block (x:xs)) = pp x PP.$$ pp (Block xs)
+
+-- | TODO: Implement the rest of pretty printing for statements.
 instance PP Statement where
-  pp = undefined
+  pp Empty = PP.empty
+  pp (Decl b e) = (<>) (pp "var" <+> pp b <+> pp ":=" <+> pp e) (pp ";")
+  pp (Assert p) = PP.parens $ pp p <+> pp ";"
+  pp (Assign v e) = pp v <+> pp ":=" <+> pp e <+> pp ";"
+  pp (If e b1 (Block [])) = PP.vcat [ pp "if" <+> PP.parens (pp e) <+> pp "{"
+                                    , PP.nest 2 (pp b1)
+                                    , pp "}" ]
+  pp (If e b1 b2) = PP.vcat [ pp "if" <+> PP.parens (pp e) <+> pp "{"
+                                    , PP.nest 2 (pp b1)
+                                    , pp "}"
+                                    , pp "else {"
+                                    , PP.nest 2 (pp b2)
+                                    , pp "}" ]
+  pp (While [] e b) = PP.vcat [ pp "while" <+> PP.parens (pp e)
+                              , pp "{ "
+                              , PP.nest 2 (pp b)
+                              , pp "}" ]
+  pp (While ps e b) = PP.vcat [ pp "while" <+> PP.parens (pp e)
+                              , PP.nest 2 $ (foldr (\x acc -> pp "invariant" <+> pp x PP.$$ acc) PP.empty ps)
+                              , pp "{ "
+                              , PP.nest 2 (pp b)
+                              , pp "}" ]
 
+-- | TODO: Implement pretty printing for predicates
+instance PP Predicate where
+  pp (Predicate [] e) = pp e
+  pp (Predicate (b:bs) e) = pp "forall" <+> pp b <+> pp "::" <+> pp (Predicate bs e)
+
+-- | TODO: Finally, implement pretty printing for MiniDafny methods
 instance PP Method where
-  pp = undefined
+  pp (Method n args rets specs b) = PP.vcat [ pp "method" <+> pp n <+>
+                                              PP.parens (pp args) <+>
+                                              pp "returns" <+> PP.parens (pp rets)
+                                            , PP.nest 2 (pp specs)
+                                            , pp "{ "
+                                            , PP.nest 2 (pp b)
+                                            , pp "}" ]
+
+-- | Added Instances
+instance PP Specification where 
+  pp (Requires p) = pp "requires" <+> pp p 
+  pp (Ensures p) = pp "ensures" <+> pp p
+  pp (Modifies p) = pp "modifies" <+> pp p
+
+instance PP [Specification] where 
+  pp [] = PP.empty
+  pp [s] = pp s 
+  pp (s:ss) = pp s PP.$+$ pp ss
+
+instance PP [Binding] where
+  pp [] = PP.empty
+  pp [b] = pp b
+  pp (b:bs) = pp b <+> pp "," <+> pp bs
+
+instance PP [Predicate] where 
+  pp ([]) = PP.empty
+  pp (p:ps) = pp p <+> pp ps

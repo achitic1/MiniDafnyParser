@@ -70,7 +70,7 @@ need the `space` parser from the [Parser](Parser.hs) library.
 -}
 
 wsP :: Parser a -> Parser a
-wsP p = undefined
+wsP p = p <* many P.space
 
 test_wsP :: Test
 test_wsP = TestList [
@@ -85,7 +85,7 @@ that trailing whitespace is being treated appropriately.
 -}
 
 stringP :: String -> Parser ()
-stringP = undefined
+stringP s = wsP (P.string s) *> pure () 
 
 test_stringP :: Test
 test_stringP = TestList [
@@ -98,7 +98,7 @@ test_stringP = TestList [
 -- | given value `x`, and also and consume any white space that follows.
 
 constP :: String -> a -> Parser a
-constP _ _ = undefined
+constP s v = stringP s *> pure v
 
 test_constP :: Test
 test_constP = TestList [
@@ -113,12 +113,12 @@ parens :: Parser a -> Parser a
 parens x = P.between (stringP "(") x (stringP ")")
 
 braces :: Parser a -> Parser a
-braces x = undefined
+braces x = P.between (stringP "{") x (stringP "}")
 
 -- >>> P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]"
 -- Right [1,1,1]
 brackets :: Parser a -> Parser a
-brackets x = undefined
+brackets x = P.between (stringP "[") x (stringP "]")
 
 
 

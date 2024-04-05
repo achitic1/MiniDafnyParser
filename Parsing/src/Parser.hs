@@ -27,7 +27,7 @@ newtype Parser a = P { doParse :: String -> Maybe (a, String) }
 
 instance Functor Parser where
   fmap :: (a -> b) -> Parser a -> Parser b
-  fmap f p = P $ \s -> do (c, cs) <- doParse p s
+  fmap f p = P $ \s -> do (c, cs) <- doParse p s  -- doParse is a field accessor so we use this to actually retrieve the function from the parser
                           return (f c, cs)
                           
 instance Applicative Parser where
@@ -71,7 +71,7 @@ eof = P $ \s -> case s of
 filter :: (a -> Bool) -> Parser a -> Parser a
 filter f p = P $ \s ->  do 
                          (c , cs) <- doParse p s
-                         guard (f c)
+                         guard (f c)  -- If any guard fails the return will output nothing
                          return (c , cs)
 
 
@@ -126,6 +126,10 @@ char c = satisfy (c ==)
 -- Succeeds only if the input is the given string
 string :: String -> Parser String
 string = foldr (\c p -> (:) <$> char c <*> p) (pure "")
+--       This function folds over a string 
+--       c is a character and p is the parser that is being accumulated
+--       (:) <$> char c -- this creates a parser that prepends c to a string
+--       <*> p then applies the value of p to the value of the other parser which is a function and then gives a parser for a [Char] iow a string
 
 -- | succeed only if the input is a (positive or negative) integer
 int :: Parser Int
