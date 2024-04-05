@@ -75,7 +75,12 @@ wsP p = p <* many P.space
 test_wsP :: Test
 test_wsP = TestList [
   P.parse (wsP P.alpha) "a" ~?= Right 'a',
-  P.parse (many (wsP P.alpha)) "a b \n   \t c" ~?= Right "abc"
+  P.parse (many (wsP P.alpha)) "a b \n   \t c" ~?= Right "abc",
+  P.parse (wsP P.digit) "1  2   2" ~?= Right '1',
+  P.parse (wsP P.alpha) "abba" ~?= Right 'a',
+  P.parse (many (wsP P.alpha)) "      " ~?= Right "",
+  P.parse (many (wsP P.digit)) "  2 3 5 " ~?= Right "",
+  P.parse (many (wsP P.digit)) "2  3  4  5  " ~?= Right "2345"
   ]
 
 {- |
@@ -91,7 +96,8 @@ test_stringP :: Test
 test_stringP = TestList [
   P.parse (stringP "a") "a" ~?= Right (),
   P.parse (stringP "a") "b" ~?= Left "No parses",
-  P.parse (many (stringP "a")) "a  a" ~?= Right [(),()]
+  P.parse (many (stringP "a")) "a  a" ~?= Right [(),()],
+  P.parse (stringP "a") "a  a" ~?= Right ()
   ]
 
 -- | Define a parser that will accept a particular string `s`, returning a
@@ -103,7 +109,9 @@ constP s v = stringP s *> pure v
 test_constP :: Test
 test_constP = TestList [
   P.parse (constP "&" 'a')  "&  " ~?=  Right 'a',
-  P.parse (many (constP "&" 'a'))  "&   &" ~?=  Right "aa"
+  P.parse (many (constP "&" 'a'))  "&   &" ~?=  Right "aa",
+  P.parse (constP "&" 'a') "&   &" ~?= Right 'a',
+  P.parse (constP "&" 'a') "!    !" ~?= Left "No parses"
   ]
 
 -- | We will also use `stringP` for some useful operations that parse between
@@ -120,6 +128,21 @@ braces x = P.between (stringP "{") x (stringP "}")
 brackets :: Parser a -> Parser a
 brackets x = P.between (stringP "[") x (stringP "]")
 
+
+test_braces :: Test
+test_braces = TestList [
+  P.parse (braces (many P.alpha)) "{dog}" ~?= Right "dog",
+  P.parse (many (braces (many P.alpha))) "{dog}\n{cat}" ~?= Right ["dog", "cat"],
+  P.parse (braces (many P.alpha)) "dog" ~?= Left "No parses",
+  P.parse (braces (many P.alpha)) "{dog" ~?= Left "No parses",
+  P.parse (braces (many P.alpha)) "dog}" ~?= Left "No parses"
+  ]
+
+test_brackets :: Test
+test_brackets = TestList [
+  P.parse (many (brackets (constP "1" 1))) "[1] [  1]   [1 ]" ~?= Right [1,1,1],
+  P.parse (many (brackets (constP "1" 1))) "[1]  \n  [  1] \n  [1 ] \n\n\n" ~?= Right [1,1,1]
+  ]
 
 
 {- | Parsing Constants
@@ -140,12 +163,26 @@ valueP = intValP <|> boolValP
 -- >>> P.parse (many intValP) "1 2\n 3"
 -- Right [IntVal 1,IntVal 2,IntVal 3]
 intValP :: Parser Value
-intValP = undefined
+intValP = IntVal <$> (wsP P.int) 
+
+test_intValP :: Test
+test_intValP = TestList [
+  P.parse (many intValP) "1 2\n 3" ~?= Right [IntVal 1,IntVal 2,IntVal 3],
+  P.parse intValP "1" ~?= Right (IntVal 1),
+  P.parse (many intValP) "1 2\n 3\n y" ~?= Right [IntVal 1, IntVal 2, IntVal 3],
+  P.parse intValP "d\n 1 2" ~?= Left "No parses"
+  ]
 
 -- >>> P.parse (many boolValP) "true false\n true"
 -- Right [BoolVal True,BoolVal False,BoolVal True]
 boolValP :: Parser Value
-boolValP = undefined
+boolValP = BoolVal <$> ((constP "true" True) <|> (constP "false" False))
+
+test_boolValP :: Test
+test_boolValP = TestList [
+  P.parse (many boolValP) "true false\n true" ~?= Right [BoolVal True,BoolVal False,BoolVal True],
+  prop_roundtrip_val (IntVal 2) ~?= True
+  ]
 
 -- | At this point you should be able to run tests using the `prop_roundtrip_val` property. 
 
@@ -202,7 +239,16 @@ lenP = (Op1 Len . Var . Name) <$> (nameP <* stringP ".Length")
 -- >>> P.parse varP "y[1]"
 -- Right (Proj "y" (Val (IntVal 1)))
 varP :: Parser Var
-varP = undefined 
+varP = arrIndP <|> varNameP
+
+varNameP :: Parser Var
+varNameP = Name <$> nameP
+
+arrIndP :: Parser Var 
+arrIndP = Proj <$> notBracket <*> brackets expP
+  where 
+     notBracket :: Parser String
+     notBracket = some (P.satisfy (not . (=='[')))
 
 {- | 
 Define an expression parser for names. Names can be any sequence of upper and
@@ -216,17 +262,27 @@ reserved = [ "assert", "break","else","Length"
  ,"false","for","function","invariant","if","in"
  ,"return","true","method","int", "bool", "while", "requires", "ensures"]
 
+isValid :: String -> Bool
+isValid (s:ss) = notReserved (s:ss) && notDigit s 
+isValid _ = False
+
+notDigit :: Char -> Bool
+notDigit = not . (\c -> Char.isDigit c)
+
+notReserved :: String -> Bool
+notReserved = not . (\s -> elem s reserved)
+
 -- >>> P.parse (many nameP) "x sfds _ int"
 -- Right ["x","sfds", "_"]
 nameP :: Parser Name
-nameP = undefined
+nameP = P.filter isValid (wsP (some (P.satisfy (not . Char.isSpace))))
 
 -- Now write parsers for the unary and binary operators. Make sure you
 --  check out the Syntax module for the list of all possible
 --  operators. The tests are not exhaustive.
 
--- >>> P.parse (many uopP) "- - #"
--- Right [Neg,Neg,Len]
+-- >>> P.parse (many uopP) "- -"
+-- Right [Neg,Neg]
 uopP :: Parser Uop
 uopP = undefined
 
