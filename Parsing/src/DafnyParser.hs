@@ -232,7 +232,13 @@ opAtLevel l = flip Op2 <$> P.filter (\x -> level x == l) bopP
 lenP :: Parser Expression
 lenP = (Op1 Len . Var . Name) <$> (nameP <* stringP ".Length")
 
--- | A variable is a prefix followed by array indexing or ".Length" or just a name.
+test_expP :: Test
+test_expP = TestList [
+  P.parse expP "a.Length" ~?= Right (Op1 Len (Var (Name "a"))),
+  prop_roundtrip_exp (Op1 Len (Var (Name "a"))) ~?= True
+  ]
+
+-- | A variable is a prefix followed by array indexing or just a name.
 
 -- >>>  P.parse (many varP) "x y z"
 -- Right [Name "x", Name "y", Name "z"]
@@ -249,6 +255,11 @@ arrIndP = Proj <$> notBracket <*> brackets expP
   where 
      notBracket :: Parser String
      notBracket = some (P.satisfy (not . (=='[')))
+
+test_varP :: Test
+test_varP = TestList [
+  P.parse varP "a.Length" ~?= Right (Name "a")
+  ]
 
 {- | 
 Define an expression parser for names. Names can be any sequence of upper and
@@ -272,10 +283,22 @@ notDigit = not . (\c -> Char.isDigit c)
 notReserved :: String -> Bool
 notReserved = not . (\s -> elem s reserved)
 
+isValidChar :: Char -> Bool
+isValidChar = (\c -> (not (Char.isSpace c)) && (Char.isAlpha c || Char.isDigit c || c == '_'))
+
 -- >>> P.parse (many nameP) "x sfds _ int"
 -- Right ["x","sfds", "_"]
 nameP :: Parser Name
-nameP = P.filter isValid (wsP (some (P.satisfy (not . Char.isSpace))))
+nameP = P.filter isValid (wsP (some (P.satisfy (isValidChar))))
+
+test_nameP :: Test
+test_nameP = TestList [
+  P.parse (many nameP) "x sfds _ int" ~?= Right ["x","sfds", "_"],
+  P.parse (many nameP) "       arr" ~?= Right [],
+  P.parse nameP "       arr" ~?= Left "No parses",
+  P.parse (many nameP) "bool dog arr err" ~?= Right [],
+  P.parse (many nameP) "arr three 1two dog" ~?= Right ["arr", "three"]
+  ]
 
 -- Now write parsers for the unary and binary operators. Make sure you
 --  check out the Syntax module for the list of all possible
@@ -286,13 +309,22 @@ nameP = P.filter isValid (wsP (some (P.satisfy (not . Char.isSpace))))
 uopP :: Parser Uop
 uopP = (constP "-" Neg) <|> (constP "!" Not)
 
+test_uopP :: Test
+test_uopP = TestList [
+  P.parse (many uopP) "- -" ~?= Right [Neg,Neg],
+  P.parse uopP "-" ~?= Right Neg,
+  P.parse uopP "!" ~?= Right Not,
+  P.parse uopP "!dsad" ~?= Right Not,
+  P.parse uopP "=!" ~?= Left "No parses"
+  ]
+
 -- >>> P.parse (many bopP) "+ >="
 -- Right [Plus,Ge]
 bopP :: Parser Bop
 bopP = plusP <|> minusP <|> timesP <|> divideP <|>
-       moduloP <|> eqP <|> neqP <|> 
-       gtP <|> geP <|> ltP <|> leP <|>
-       conjP <|> disjP <|> impliesP <|> iffP 
+       moduloP <|> impliesP <|> iffP <|> neqP <|> 
+       eqP <|> geP <|> gtP <|> leP <|> ltP <|>
+       conjP <|> disjP
   where 
      plusP = constP "+" Plus
      minusP = constP "-" Minus
@@ -309,6 +341,24 @@ bopP = plusP <|> minusP <|> timesP <|> divideP <|>
      disjP = constP "||" Disj
      impliesP = constP "==>" Implies
      iffP = constP "<==>" Iff
+
+test_bopP :: Test
+test_bopP = TestList [
+  P.parse (many bopP) "+ >=" ~?= Right [Plus,Ge],
+  P.parse bopP "<=" ~?= Right Le,
+  P.parse bopP "==>" ~?= Right Implies,
+  P.parse bopP "<==>" ~?= Right Iff,
+  P.parse bopP "==" ~?= Right Eq,
+  P.parse bopP "!=" ~?= Right Neq,
+  P.parse bopP "&&" ~?= Right Conj,
+  P.parse bopP "||" ~?= Right Disj,
+  P.parse bopP ">" ~?= Right Gt,
+  P.parse bopP "<" ~?= Right Lt,
+  P.parse bopP "-" ~?= Right Minus,
+  P.parse bopP "*" ~?= Right Times,
+  P.parse bopP "/   " ~?= Right Divide,
+  P.parse bopP "   !=" ~?= Left "No parses"
+  ]
 
 -- | At this point you should be able to test the  `prop_roundtrip_exp` property.
 
