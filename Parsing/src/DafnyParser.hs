@@ -245,16 +245,13 @@ test_expP = TestList [
 -- >>> P.parse varP "y[1]"
 -- Right (Proj "y" (Val (IntVal 1)))
 varP :: Parser Var
-varP = arrIndP <|> varNameP
+varP = varNameP <|> arrIndP
 
 varNameP :: Parser Var
 varNameP = Name <$> nameP
 
 arrIndP :: Parser Var 
-arrIndP = Proj <$> notBracket <*> brackets expP
-  where 
-     notBracket :: Parser String
-     notBracket = some (P.satisfy (not . (=='[')))
+arrIndP = Proj <$> nameP <*> brackets expP
 
 test_varP :: Test
 test_varP = TestList [
@@ -370,11 +367,28 @@ First, define a parser for bindings...
 -}
 
 bindingP :: Parser Binding
-bindingP = undefined
+bindingP =  (,) <$> nameP <* stringP ":" <*> typeP
+
+
+test_bindingP :: Test
+test_bindingP = TestList [
+  P.parse bindingP "x : int" ~?= Right ("x", TInt),
+  P.parse (many bindingP) "x : int y : int" ~?= Right [("x", TInt), ("y", TInt)],
+  P.parse bindingP "y = bool" ~?= Left "No parses"
+  ]
 
 -- | ...and predicates...
 predicateP :: Parser Predicate
-predicateP = undefined
+predicateP = Predicate <$> (P.sepBy bindingP commaP) <* stringP "::" <*> expP
+  where 
+    commaP = stringP ","
+
+test_predicateP :: Test
+test_predicateP = TestList [
+  P.parse predicateP "x : int :: 0 <= i && i < a.Length ==> a[i] > 0" ~?= Right (Predicate [("x", TInt)] (Op2 (Op2 (Op2 (Val (IntVal 0)) Le (Op2 (Var (Name "i")) Conj (Var (Name "i")))) Lt (Op1 Len (Var (Name "a")))) Implies (Var (Name "a")))),
+  P.parse predicateP "x : int, y : bool :: y" ~?= Right (Predicate [("x", TInt), ("y", TBool)] (Var (Name "y"))),
+  P.parse predicateP ": int :: x" ~?= Left "No parses"
+  ]
 
 -- | Finally, define a parser for statements:
 
