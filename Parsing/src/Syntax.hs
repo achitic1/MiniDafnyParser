@@ -84,8 +84,8 @@ instance Monoid Block where
 
 data Statement =
     Decl Binding Expression            -- var x : int := e;
-  | Assert Predicate                   -- assert p
-  | Assign Var Expression              -- x := e
+  | Assert Predicate                   -- assert p;
+  | Assign Var Expression              -- x := e;
   | If Expression Block Block          -- if e { s1 } else { s2 } 
   | While [Predicate] Expression Block -- while e [invariant P] { s }
   | Empty                              -- 

@@ -245,7 +245,7 @@ test_expP = TestList [
 -- >>> P.parse varP "y[1]"
 -- Right (Proj "y" (Val (IntVal 1)))
 varP :: Parser Var
-varP = varNameP <|> arrIndP
+varP = arrIndP <|> varNameP
 
 varNameP :: Parser Var
 varNameP = Name <$> nameP
@@ -379,26 +379,51 @@ test_bindingP = TestList [
 
 -- | ...and predicates...
 predicateP :: Parser Predicate
-predicateP = Predicate <$> (P.sepBy bindingP commaP) <* stringP "::" <*> expP
+predicateP = pBindP <|> pNoBindP
   where 
-    commaP = stringP ","
+    pBindP = Predicate <$> (P.sepBy bindingP (stringP ",")) <* stringP "::" <*> expP
+    pNoBindP = Predicate <$> (P.sepBy bindingP (stringP ",")) <*> expP
 
 test_predicateP :: Test
 test_predicateP = TestList [
   P.parse predicateP "x : int :: 0 <= i && i < a.Length ==> a[i] > 0" ~?= Right (Predicate [("x", TInt)] (Op2 (Op2 (Op2 (Val (IntVal 0)) Le (Op2 (Var (Name "i")) Conj (Var (Name "i")))) Lt (Op1 Len (Var (Name "a")))) Implies (Var (Name "a")))),
   P.parse predicateP "x : int, y : bool :: y" ~?= Right (Predicate [("x", TInt), ("y", TBool)] (Var (Name "y"))),
-  P.parse predicateP ": int :: x" ~?= Left "No parses"
+  P.parse predicateP ": int :: x" ~?= Left "No parses",
+  P.parse predicateP "x == true" ~?= Right (Predicate [] (Op2 (Var (Name "x")) Eq (Val (BoolVal True))))
   ]
 
 -- | Finally, define a parser for statements:
 
+-- ifP <|> whileP
+-- If (exp) Block[] else Block[] if there is no else the second block is just empty i.e Block []
+
 statementP :: Parser Statement
-statementP = undefined
+statementP = declP <|> assertP <|> assignP <|> ifP <|> emptyP
+  where 
+    declP = Decl <$> (stringP "var" *> bindingP <* stringP ":=") <*> expP
+    assertP = Assert <$> (stringP "assert" *> predicateP)
+    assignP = Assign <$> varP <* stringP ":=" <*> expP
+    ifP = elseP <|> noElseP 
+      where 
+        elseP = If <$> (stringP "if" *> expP) <*> blockP <* stringP "else" <*> blockP 
+        noElseP = If <$> (stringP "if" *> expP) <*> blockP <*> pure (Block[])
+    -- whileP = While <$>
+    emptyP = stringP ";" *> pure Empty
+
+test_statementP :: Test
+test_statementP = TestList [
+  P.parse statementP "var x : int := e;" ~?= Right (Decl ("x",TInt) (Var (Name "e"))),
+  P.parse statementP "assert x" ~?= Right (Assert (Predicate [] (Var (Name "x")))),
+  P.parse statementP "x := e" ~?= Right (Assign (Name "x") (Var (Name "e"))),
+  P.parse (many statementP) "x := e;" ~?= Right [(Assign (Name "x") (Var (Name "e"))), Empty]
+  ]
 
 -- | ... and one for blocks.
 
+-- It looks like statements are separated by an Empty Statement
+
 blockP :: Parser Block
-blockP = undefined
+blockP = Block <$> P.between (stringP "{") (many statementP) (stringP "}")
 
 {- | Parsing Methods
      ---------------
