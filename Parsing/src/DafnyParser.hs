@@ -398,7 +398,7 @@ test_predicateP = TestList [
 -- If (exp) Block[] else Block[] if there is no else the second block is just empty i.e Block []
 
 statementP :: Parser Statement
-statementP = declP <|> assertP <|> assignP <|> ifP <|> emptyP
+statementP = declP <|> assertP <|> assignP <|> ifP <|> whileP <|> emptyP
   where 
     declP = Decl <$> (stringP "var" *> bindingP <* stringP ":=") <*> expP
     assertP = Assert <$> (stringP "assert" *> predicateP)
@@ -407,7 +407,10 @@ statementP = declP <|> assertP <|> assignP <|> ifP <|> emptyP
       where 
         elseP = If <$> (stringP "if" *> expP) <*> blockP <* stringP "else" <*> blockP 
         noElseP = If <$> (stringP "if" *> expP) <*> blockP <*> pure (Block[])
-    -- whileP = While <$>
+    whileP = (\exp predicates block -> While predicates exp block)
+      <$> (stringP "while" *> expP)
+      <*> many (stringP "invariant" *> predicateP)
+      <*> blockP
     emptyP = stringP ";" *> pure Empty
 
 test_statementP :: Test
