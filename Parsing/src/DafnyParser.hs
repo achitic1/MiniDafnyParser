@@ -418,7 +418,8 @@ test_statementP = TestList [
   P.parse statementP "var x : int := e;" ~?= Right (Decl ("x",TInt) (Var (Name "e"))),
   P.parse statementP "assert x" ~?= Right (Assert (Predicate [] (Var (Name "x")))),
   P.parse statementP "x := e" ~?= Right (Assign (Name "x") (Var (Name "e"))),
-  P.parse (many statementP) "x := e;" ~?= Right [(Assign (Name "x") (Var (Name "e"))), Empty]
+  P.parse (many statementP) "x := e;" ~?= Right [(Assign (Name "x") (Var (Name "e"))), Empty],
+  P.parse statementP "while x < a invariant x <= a invariant y == 0 invariant z == x + y + c {x := x + 1; z := z + 1;}" ~?= Right (While [Predicate [] (Op2 (Var (Name "x")) Le (Var (Name "a"))),Predicate [] (Op2 (Var (Name "y")) Eq (Val (IntVal 0))),Predicate [] (Op2 (Var (Name "z")) Eq (Op2 (Op2 (Var (Name "x")) Plus (Var (Name "y"))) Plus (Var (Name "c"))))] (Op2 (Var (Name "x")) Lt (Var (Name "a"))) (Block [Assign (Name "x") (Op2 (Var (Name "x")) Plus (Val (IntVal 1))),Empty,Assign (Name "z") (Op2 (Var (Name "z")) Plus (Val (IntVal 1))),Empty]))
   ]
 
 -- | ... and one for blocks.
@@ -436,10 +437,38 @@ blockP = Block <$> P.between (stringP "{") (many statementP) (stringP "}")
 
 -}
 
-methodP :: Parser Method
-methodP = undefined
+-- | Specifications
+specP :: Parser Specification 
+specP = requiresP <|> ensuresP <|> modifiesP
+  where 
+    requiresP = rForAllP <|> rNoForAllP
+      where 
+        rNoForAllP = Requires <$> (stringP "requires" *> predicateP)
+        rForAllP = Requires <$> ((stringP "requires" *> stringP "forall") *> predicateP)
+    ensuresP = eForAllP <|> eNoForAllP
+      where 
+        eNoForAllP = Ensures <$> (stringP "ensures" *> predicateP)
+        eForAllP = Ensures <$> ((stringP "ensures" *> stringP "forall") *> predicateP)
+    modifiesP = Modifies <$> nameP
 
- 
+specsP :: Parser [Specification]
+specsP = many specP
+
+-- | Many bindings ex. (x : int, y : int)
+bindingsP :: Parser [Binding]
+bindingsP = (parens (P.sepBy bindingP (stringP ",")))
+
+methodP :: Parser Method
+methodP = Method <$> (stringP "method" *> nameP) <*> (bindingsP <* (stringP "returns")) <*> bindingsP <*> specsP <*> blockP
+
+
+test_method :: Test
+test_method = TestList [
+  P.parse methodP "method Abs (r : int) returns (absR : int) { if r < 0 { absR := -r;} else {absR := r;}}" ~?= Right (Method "Abs" [("r",TInt)] [("absR",TInt)] []
+              (Block [If (Op2 (Var (Name "r")) Lt (Val (IntVal 0)))
+                         (Block [Assign (Name "absR") (Op1 Neg (Var (Name "r"))),Empty])
+                         (Block [Assign (Name "absR") (Var (Name "r")),Empty])]))
+  ]
 {- | Parsing Expressions and Files
      -----------------------------
 
